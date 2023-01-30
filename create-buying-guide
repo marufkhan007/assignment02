@@ -1,0 +1,107 @@
+import openai
+import base64
+from requests import post
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+api_endpoints = os.getenv('api_endpoints')
+openai.api_key = os.getenv('openai.api_key')
+
+wp_user = os.getenv('wp_user')
+wp_password = os.getenv('wp_password')
+wp_credential = os.getenv('wp_credential')
+wp_token = base64.b64encode(wp_credential.encode())
+wp_header = {'Authorization': 'Basic ' + wp_token.decode('utf-8')}
+
+
+def openai_answer(prompt):
+    """
+  We can get the openai answer of questions.
+  param prompt: It represents command from openai.
+  :return: This will return the answer of questions.
+  """
+    response = openai.Completion.create(
+        model="text-davinci-003",
+        prompt=prompt,
+        temperature=0.7,
+        max_tokens=256,
+        top_p=1,
+        frequency_penalty=0,
+        presence_penalty=0
+    )
+    data = response.get('choices')[0].get('text').strip('\n')
+    return data
+
+
+Products = open('Products.txt', 'r')
+keyword_list = []
+for product in Products:
+    keyword = product.strip('\n')
+    keyword_list.append(keyword)
+keyword = keyword_list[2]
+Products.close()
+
+intro = openai_answer(f'Write an intro of 100 words about {keyword}')
+questions = openai_answer(f'How to choose {keyword}')
+conclusion = openai_answer(f'Write an conclusion about {keyword}')
+
+
+question = questions.split('\n')
+while '' in question:
+    question.remove('')
+
+que_ans_dict = {}
+for que in question:
+    answer = openai_answer(que)
+    que_ans_dict[que] = answer
+
+
+def wp_heading_two(text):
+    """
+  This function is for creating heading two (h2) of WordPress.
+  :param text: It accepts a text.
+  :return: It will return heading two (h2).
+  """
+    heading_two = f'<!-- wp:heading --><h2>{text}</h2><!-- /wp:heading -->'
+    return heading_two
+
+
+def wp_paragraph(text):
+    """
+  This function is for creating paragraph (p) of WordPress.
+  :param text: It accepts a text.
+  :return: It will return paragraph (p).
+  """
+    paragraph = f'<!-- wp:paragraph --><p>{text}</p><!-- /wp:paragraph -->'
+    return paragraph
+
+
+title = f'{keyword} Buying Guide'  
+
+content = wp_paragraph(intro)  
+for key, value in que_ans_dict.items():  
+    h2 = wp_heading_two(key)
+    p = wp_paragraph(value)
+    content += h2 + p
+
+conclusion_heading = wp_heading_two('Conclusion')  
+conclusion_paragraph = wp_paragraph(conclusion)
+conclusions = f'{conclusion_heading}{conclusion_paragraph}'
+
+final_content = f'{content}{conclusions}'
+
+
+slug = title.strip().lower().replace(' ', '-')
+
+data = {
+    'title': title,
+    'slug': slug,
+    'content': final_content,
+    'status': 'publish'
+}
+
+res = post(api_endpoints, data=data, headers=wp_header, verify=False)
+
+if res.status_code == 201:
+    print('Posted Successfully!')
